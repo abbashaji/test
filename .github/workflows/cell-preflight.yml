@@ -1,0 +1,39 @@
+name: cell-preflight
+
+# Dry run of the full acceptance pipeline on the current tip of cell/<ID>, WITHOUT a PR and WITHOUT merging.
+# An agent starts it mid-work (workflow_dispatch from the connector), keeps working, and reads the short
+# result later (artifact "test-results", file output.log). Same checks, same parallel matrix as the real gate,
+# except the title, empty-diff and missing-output checks, which only make sense for finished work.
+#
+# The run title carries the cell id, so next_cell --ci sees that the cell's chat is waiting for CI, not dead.
+run-name: preflight ${{ inputs.cell_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      cell_id:
+        description: "Cell id, e.g. C-007"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preflight-${{ inputs.cell_id }}
+  cancel-in-progress: true   # a newer preflight of the same cell replaces the older one
+
+jobs:
+  preflight:
+    # The called workflow's verdict job asks for write permissions; a caller must grant at least as much.
+    # With merge: false it never merges or comments.
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    uses: ./.github/workflows/cell-checks.yml
+    with:
+      branch: cell/${{ inputs.cell_id }}
+      title: preflight
+      merge: false
+      preflight: true

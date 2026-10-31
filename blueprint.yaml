@@ -1,0 +1,22 @@
+# Project-level blueprint config. Agents can never modify this file (protected).
+project: test
+main_branch: main
+lease_minutes: 60          # default lease: a cell branch with no commit for this long can be taken over.
+                           # A cell can set its own lease_minutes (use 15 for cells other cells wait for).
+max_ci_minutes: 45         # a queued/running workflow for the cell keeps the lease alive, but at most this long
+bottleneck_threshold: 4    # a cell that this many cells wait for directly is critical (also: chain >= 3 or transitive >= 5)
+# critical_lease_minutes: 15   # lease cap for critical cells (skeletons included)
+# critical_chain_threshold: 3  # critical if its chain of dependents is this long
+# critical_transitive_threshold: 5  # critical if this many cells depend on it, directly or not
+# park_max_minutes: 120        # expired non-critical cells are served after fresh ones until idle this long
+# max_attempts: 3              # a cell taken over this often becomes needs_split (a human must split it)
+max_cell_files: 8          # a cell with more outputs must be split
+acceptance_timeout_s: 600  # per acceptance command
+
+# Extra globs that cells may never touch. Always protected, no need to list:
+#   cells/**  blueprint.yaml  BLUEPRINT.md  tools/**  .github/**  acceptance/**  docs/decisions.md
+protected_paths: []
+
+# Shared files that only ONE cell may touch (lock files, package manifests, route registries).
+# Example:  pyproject.toml: C-000
+owners: {}

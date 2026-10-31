@@ -1,0 +1,223 @@
+name: cell-checks
+
+# Reusable pipeline shared by the PR gate and the preflight dry run.
+#
+#   plan    static checks against the TRUSTED plan (read from the default branch, never from the PR),
+#           and the list of acceptance commands -> one matrix entry per command
+#   accept  one job PER acceptance command, all in parallel (up to 4 at a time). Runs the agent's code,
+#           so it gets a read-only token, no persisted credentials and no secrets
+#   verdict collects every result, writes ONE short output.log (verdict + all failures), and (merge=true)
+#           squash-merges the exact commit that was checked. It never runs the agent's code.
+#
+# Parallelism changes only where commands run, not which ones: the verdict is green only if the static
+# checks pass and EVERY acceptance command exited 0. A missing result counts as a failure.
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: cell branch, e.g. cell/C-007
+        type: string
+        required: true
+      sha:
+        description: exact commit to check (default is the branch tip)
+        type: string
+        default: ""
+      title:
+        description: PR title (must start with cell(C-NNN):)
+        type: string
+        required: true
+      pr_number:
+        type: string
+        default: "0"
+      merge:
+        description: squash-merge on success
+        type: boolean
+        default: false
+      preflight:
+        description: mid-work dry run (skip title, empty-diff and missing-output checks)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.check.outputs.matrix }}
+      runnable: ${{ steps.check.outputs.runnable }}
+    steps:
+      - name: Trusted checkout (plan, config, tools)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+      - name: Work checkout (the agent's code, untrusted)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || inputs.branch }}
+          path: work
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: Static checks
+        id: check
+        env:
+          BRANCH: ${{ inputs.branch }}
+          TITLE: ${{ inputs.title }}
+          PREFLIGHT_FLAG: ${{ inputs.preflight && '--preflight' || '' }}
+        run: |
+          python trusted/tools/cell_gate.py --mode check \
+            --trusted trusted --work work \
+            --branch "$BRANCH" --title "$TITLE" \
+            --base-ref "origin/$DEFAULT_BRANCH" $PREFLIGHT_FLAG \
+            --check-file out/check.json --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gate-check
+          path: out/check.json
+
+  accept:
+    needs: plan
+    if: needs.plan.outputs.runnable == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false      # every command must report, so the agent sees ALL failures in one round
+      max-parallel: 4       # per cell; keep total under your plan's concurrent-job limit
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Trusted checkout (tools)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+      - name: Work checkout (the agent's code, untrusted)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || inputs.branch }}
+          path: work
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: gate-check
+          path: check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: Project setup (runs inside the work checkout)
+        # A project can own this step with .github/blueprint-setup.sh on the default branch (any language).
+        # Without it, a Python default applies, so a brand-new repo needs no setup at all.
+        run: |
+          if [ -f trusted/.github/blueprint-setup.sh ]; then
+            cd work && bash ../trusted/.github/blueprint-setup.sh
+          else
+            cd work
+            python -m pip install -q pytest
+            if [ -f requirements.txt ]; then python -m pip install -q -r requirements.txt; fi
+            if [ -f pyproject.toml ]; then python -m pip install -q -e . || echo "note: pip install -e . failed; continuing (pythonpath may cover it)"; fi
+          fi
+      - name: Acceptance command
+        run: |
+          python trusted/tools/cell_gate.py --mode run-one \
+            --check-file check/check.json --work work \
+            --index ${{ matrix.index }} --result results/acc-${{ matrix.index }}.json
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acc-${{ matrix.index }}
+          path: results/acc-${{ matrix.index }}.json
+          if-no-files-found: ignore
+
+  verdict:
+    needs: [plan, accept]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # squash merge
+      pull-requests: write   # comment on failure
+      actions: write         # re-validate the plan on the default branch after a merge
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ inputs.pr_number }}
+      HEAD_SHA: ${{ inputs.sha }}
+    steps:
+      - name: Trusted checkout (tools only; the agent's code is never run in this job)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - uses: actions/download-artifact@v4
+        with:
+          name: gate-check
+          path: check
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: acc-*
+          path: results
+          merge-multiple: true
+      - name: Aggregate
+        id: agg
+        continue-on-error: true
+        run: |
+          python tools/cell_gate.py --mode aggregate \
+            --check-file check/check.json --results-dir results --summary summary/output.log
+      - name: Fallback summary if the pipeline itself broke
+        if: always()
+        run: |
+          mkdir -p summary
+          if [ ! -s summary/output.log ]; then
+            echo "FAIL (gate error): the check pipeline did not produce a result. See the workflow run logs." > summary/output.log
+          fi
+          cat summary/output.log
+      - name: Upload short result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: summary/output.log
+      - name: Comment failure on the PR
+        if: steps.agg.outcome != 'success' && inputs.pr_number != '0'
+        run: gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file summary/output.log || true
+      - name: Merge exactly the checked commit
+        if: steps.agg.outcome == 'success' && inputs.merge
+        run: |
+          # --match-head-commit: if the agent pushed again after the check, the merge is refused.
+          # Many cells merging at once make GitHub answer "base branch was modified": retry with a random
+          # back-off instead of failing (a failed merge used to leave a PASSED but unmerged PR).
+          merged=0
+          for attempt in 1 2 3 4 5 6; do
+            state=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq .state || echo UNKNOWN)
+            if [ "$state" = "MERGED" ]; then merged=1; break; fi
+            if gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "$HEAD_SHA"; then
+              merged=1; break
+            fi
+            echo "merge attempt $attempt failed; retrying"
+            sleep $((5 + RANDOM % 15))
+          done
+          if [ "$merged" != "1" ]; then echo "merge failed after retries"; exit 1; fi
+          # Merges made with GITHUB_TOKEN do not trigger push workflows: re-validate the plan explicitly.
+          gh workflow run validate-plan.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" || true
+      - name: Fail the job when the gate failed
+        if: steps.agg.outcome != 'success'
+        run: exit 1

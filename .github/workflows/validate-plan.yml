@@ -1,0 +1,24 @@
+name: validate-plan
+
+# The plan must stay a valid DAG. Runs after human merges to main, after the gate's own merges
+# (the gate dispatches it, because merges made with GITHUB_TOKEN do not trigger push events), or by hand.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python tools/validate_graph.py --waves

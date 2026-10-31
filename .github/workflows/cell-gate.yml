@@ -1,0 +1,38 @@
+name: cell-gate
+
+# Runs for every PR opened from a cell/C-NNN branch. The merge decision is made by cell-checks.yml.
+#
+# Why pull_request_target: with a plain `pull_request` trigger the workflow file is taken from the PR branch,
+# so an agent could edit .github/workflows/* inside its own PR and run a weaker gate. pull_request_target
+# always uses the workflow definition from the BASE branch. The agent's code is only ever checked out as data
+# and executed in the `accept` jobs of cell-checks.yml, which have a read-only token and no secrets.
+#
+# Edit `branches` if your default branch is not main.
+run-name: gate ${{ github.head_ref }}
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cell-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true   # a newer push replaces the older check
+
+jobs:
+  gate:
+    if: startsWith(github.head_ref, 'cell/') && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    uses: ./.github/workflows/cell-checks.yml
+    with:
+      branch: ${{ github.head_ref }}
+      sha: ${{ github.event.pull_request.head.sha }}
+      title: ${{ github.event.pull_request.title }}
+      pr_number: ${{ format('{0}', github.event.pull_request.number) }}
+      merge: true

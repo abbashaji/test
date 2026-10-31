@@ -1,0 +1,41 @@
+# cells/C-NNN.yaml: one cell = one chat context's worth of work (about 8 files or fewer).
+# Cells are IMMUTABLE while the project runs. Status (todo / running / done) is never stored
+# here; it is computed from git: branch cell/C-NNN exists = running, "cell(C-NNN):" commit on main = done.
+id: C-NNN                      # must equal the file name
+title: Short imperative title  # becomes the PR title: "cell(C-NNN): <title>"
+type: normal                   # normal | skeleton | integration
+priority: 0                    # optional; higher is picked first among ready cells
+lease_minutes: 60              # optional; 15 for a cell that many others wait for (a dead chat is replaced sooner)
+goal: |
+  What this cell delivers, in 2-5 lines. No open design decisions.
+
+inputs:                        # everything needed from other cells, written as CONTRACTS
+  - from: C-001
+    kind: implementation       # implementation = C-001 must be MERGED first
+                               # contract       = start now, code against a mock of the contract
+    contract: |
+      Exact interface: file path, signatures, schema, error behaviour.
+      The agent must not need to read the provider's code.
+
+after: []                      # optional pure ordering with no data flow (e.g. serialize cells that share a file)
+# supersedes: [C-00N]          # optional: this cell replaces those cells; they may share allowed_paths with it
+
+provides:                      # interfaces other cells may consume with kind: contract
+  - "src/app/x.py: def f(a: int) -> str"
+
+read:                          # tiny list of repo files worth reading first
+  - docs/decisions.md
+
+allowed_paths:                 # the ONLY paths this cell may change. Directories end with /**
+  - src/app/x.py               # Cells that can run in parallel must not overlap (validator enforces).
+  - tests/test_x.py
+
+outputs:                       # concrete files that must exist afterwards (subset of allowed_paths)
+  - src/app/x.py
+  - tests/test_x.py
+
+acceptance:                    # run by CI, every command must exit 0
+  - cmd: "pytest tests/test_x.py -q"
+
+notes: |
+  Optional hints and pitfalls.
