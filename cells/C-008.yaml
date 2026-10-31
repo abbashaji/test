@@ -1,0 +1,12 @@
+id: C-008
+title: Fresh competitor for critical-order check
+lease_minutes: 2
+goal: |
+  Create work/c008.txt.
+inputs: []
+allowed_paths:
+  - work/c008.txt
+outputs:
+  - work/c008.txt
+acceptance:
+  - cmd: "test -f work/c008.txt"
