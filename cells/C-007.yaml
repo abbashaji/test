@@ -1,0 +1,12 @@
+id: C-007
+title: Fresh non-critical candidate
+lease_minutes: 2
+goal: |
+  Create work/c007.txt.
+inputs: []
+allowed_paths:
+  - work/c007.txt
+outputs:
+  - work/c007.txt
+acceptance:
+  - cmd: "test -f work/c007.txt"

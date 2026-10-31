@@ -1,0 +1,15 @@
+id: C-004
+title: Dependent four
+goal: |
+  Create work/c004.txt.
+inputs:
+  - from: C-000
+    kind: implementation
+    contract: |
+      work/c000.txt exists.
+allowed_paths:
+  - work/c004.txt
+outputs:
+  - work/c004.txt
+acceptance:
+  - cmd: "test -f work/c004.txt"

@@ -1,0 +1,12 @@
+id: C-006
+title: Expired non-critical candidate
+lease_minutes: 2
+goal: |
+  Create work/c006.txt.
+inputs: []
+allowed_paths:
+  - work/c006.txt
+outputs:
+  - work/c006.txt
+acceptance:
+  - cmd: "test -f work/c006.txt"

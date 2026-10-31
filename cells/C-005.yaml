@@ -1,0 +1,12 @@
+id: C-005
+title: Poison candidate
+lease_minutes: 2
+goal: |
+  Create work/c005.txt.
+inputs: []
+allowed_paths:
+  - work/c005.txt
+outputs:
+  - work/c005.txt
+acceptance:
+  - cmd: "test -f work/c005.txt"

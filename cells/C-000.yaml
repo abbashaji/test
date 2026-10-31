@@ -1,0 +1,14 @@
+id: C-000
+title: Live skeleton
+type: skeleton
+goal: |
+  Create the shared marker file so dependents can build on it.
+inputs: []
+provides:
+  - "work/c000.txt: marker file"
+allowed_paths:
+  - work/c000.txt
+outputs:
+  - work/c000.txt
+acceptance:
+  - cmd: "test -f work/c000.txt"

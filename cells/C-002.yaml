@@ -1,0 +1,15 @@
+id: C-002
+title: Dependent two
+goal: |
+  Create work/c002.txt.
+inputs:
+  - from: C-000
+    kind: implementation
+    contract: |
+      work/c000.txt exists.
+allowed_paths:
+  - work/c002.txt
+outputs:
+  - work/c002.txt
+acceptance:
+  - cmd: "test -f work/c002.txt"
