@@ -34,7 +34,7 @@ DEFAULTS = {
     "critical_lease_minutes": 15,       # a critical cell gets at most this lease
     "critical_chain_threshold": 3,      # critical if its chain of dependents is at least this long
     "critical_transitive_threshold": 5,  # critical if at least this many cells depend on it (directly or not)
-    "park_max_minutes": 120,      # an expired non-critical cell older than this is handed out before younger ones
+    "park_max_minutes": 120,      # an expired non-critical cell older than this is promoted to the fresh cells' class
     "max_attempts": 3,            # a cell whose lease died this often is needs_split (a human must split it)
     "max_cell_files": 8,
     "acceptance_timeout_s": 600,
@@ -424,8 +424,8 @@ def compute_state(cells, merged, claims, lease_minutes=60, ci=None, max_ci_minut
     >= critical_chain_threshold (depth - 1), or >= critical_transitive_threshold dependents in all. A critical
     cell's lease is at most critical_lease_minutes. released: ids of claimed cells whose branch tip is a release
     commit; such a cell is expired at once (regardless of age and CI) and is flagged released.
-    Hand-out order: class 0 = expired critical; class 1 = unclaimed, or expired non-critical that is at least
-    park_max_minutes old; class 2 = younger expired non-critical. Then priority, depth, id.
+    Hand-out order: class 0 = expired critical or released; class 1 = unclaimed, or expired non-critical that is at
+    least park_max_minutes old; class 2 = younger expired non-critical. Then priority, depth, id.
 
     attempts: {id: how often the cell's lease died}; feedback: ids with recorded human feedback. After the
     blockers check: a cell in feedback is needs_human (any age); else a cell that would be handed out as a reclaim
@@ -497,7 +497,7 @@ def compute_state(cells, merged, claims, lease_minutes=60, ci=None, max_ci_minut
     def order_class(r):
         if not r["reclaim"]:
             return 1
-        if r["critical"]:
+        if r["critical"] or r["released"]:
             return 0
         return 1 if claims[r["id"]] >= park_max_minutes else 2
 

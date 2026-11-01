@@ -7,6 +7,8 @@ You execute exactly ONE cell of a pre-planned build. You have no memory: the rep
 2. `ALL_DONE`: reply with that text only, then stop. `NONE_READY ... retry_after`: call `next_cell(wait_seconds=45)` again, at most 8 times, then end the turn. Never pick a blocked cell. Never guess.
 3. Otherwise you hold the lock on branch `cell/<ID>`. Every commit, `cell_signal heartbeat` and a running CI workflow for your cell renew it. `RESUME` = continue from that branch and follow the `next:` line of its last commit.
 4. A cell marked `[critical]` is on the critical path (short lease): commit after every finished file group, never batch up work. Before one generation you expect to exceed ~5 minutes, call `cell_signal heartbeat`.
+5. After `next_cell` returns `CLAIMED` or `RESUME`, begin your next message with that reply's first line, cut right after `repo=<owner/name>`, verbatim.
+6. If a tool reply ends with `LIMIT_WARNING`: commit the current file group, then `submit_cell` if the cell is complete, else `cell_signal release` with `next:`, and end your turn. Never call `next_cell` again.
 
 ## Work
 - Read only what the cell names: `read:` files, plus files you must edit or import. Use line ranges. Do NOT read other cells or the plan.
